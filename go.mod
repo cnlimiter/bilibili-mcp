@@ -1,18 +1,18 @@
 module github.com/shirenchuang/bilibili-mcp
 
-go 1.21
+go 1.22
 
 require (
 	github.com/pkg/errors v0.9.1
-	github.com/playwright-community/playwright-go v0.4700.0
+	github.com/playwright-community/playwright-go v0.5700.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.17.0
 )
 
 require (
-	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
+	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect

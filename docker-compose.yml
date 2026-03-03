@@ -1,0 +1,32 @@
+services:
+  bilibili-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bilibili-mcp
+    ports:
+      - "18666:18666"
+    environment:
+      # Playwright 官方镜像中浏览器默认安装在 /ms-playwright
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    # Chromium 在容器里常需要更大的共享内存
+    shm_size: "2gb"
+    # Linux 下可显著减少 Chromium 崩溃；Windows/Mac Docker Desktop 可能不支持 host IPC
+    # ipc: host
+    volumes:
+      - ./cookies:/app/cookies
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./downloads:/app/downloads
+      - ./config.docker.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS -X POST http://localhost:18666/mcp -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"id\":1}' | grep -q '\"status\":\"ok\"'"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s

@@ -1,0 +1,26 @@
+# Docker 环境建议配置：对外监听、目录挂载位置
+
+server:
+  host: 0.0.0.0
+  port: 18666
+
+browser:
+  headless: true
+  pool_size: 1
+  timeout: 30s
+  viewport_width: 1920
+  viewport_height: 1080
+
+logging:
+  level: info
+  output: ./logs/bilibili-mcp.log
+
+accounts:
+  cookie_dir: ./cookies
+  default_account: default
+
+features:
+  whisper:
+    enabled: false
+    model_path: ./models/ggml-base.bin
+    whisper_cpp_path: ""
