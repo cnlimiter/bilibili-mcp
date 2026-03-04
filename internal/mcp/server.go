@@ -18,6 +18,11 @@ import (
 	"github.com/shirenchuang/bilibili-mcp/pkg/logger"
 )
 
+var toolTimeouts = map[string]time.Duration{
+	"upload_video_draft": 60 * time.Minute,
+	"upload_video":       60 * time.Minute,
+}
+
 // Server MCP服务器
 type Server struct {
 	config         *config.Config
@@ -180,9 +185,6 @@ func (s *Server) handleToolsList(request *JSONRPCRequest) *JSONRPCResponse {
 
 // handleToolCall 处理工具调用
 func (s *Server) handleToolCall(ctx context.Context, request *JSONRPCRequest) *JSONRPCResponse {
-	// 设置工具调用超时时间为5分钟（支持音频下载等耗时操作）
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
 	// 解析参数
 	params, ok := request.Params.(map[string]interface{})
 	if !ok {
@@ -198,6 +200,14 @@ func (s *Server) handleToolCall(ctx context.Context, request *JSONRPCRequest) *J
 
 	toolName, _ := params["name"].(string)
 	toolArgs, _ := params["arguments"].(map[string]interface{})
+
+	// 默认 5 分钟，上传类工具按映射使用 60 分钟
+	timeout := 5 * time.Minute
+	if t, ok := toolTimeouts[toolName]; ok {
+		timeout = t
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	logger.Infof("执行工具调用: %s", toolName)
 
@@ -230,6 +240,22 @@ func (s *Server) handleToolCall(ctx context.Context, request *JSONRPCRequest) *J
 		result = s.handleFollowUser(ctx, toolArgs)
 	case "get_user_videos":
 		result = s.handleGetUserVideos(ctx, toolArgs)
+	case "get_user_stats":
+		result = s.handleGetUserStats(ctx, toolArgs)
+	case "upload_video_draft":
+		result = s.handleUploadVideoDraft(ctx, toolArgs)
+	case "publish_video":
+		result = s.handlePublishVideo(ctx, toolArgs)
+	case "upload_video":
+		result = s.handleUploadVideo(ctx, toolArgs)
+	case "check_video_upload_status":
+		result = s.handleCheckVideoUploadStatus(ctx, toolArgs)
+	case "upload_column_draft":
+		result = s.handleUploadColumnDraft(ctx, toolArgs)
+	case "publish_column":
+		result = s.handlePublishColumn(ctx, toolArgs)
+	case "upload_column":
+		result = s.handleUploadColumn(ctx, toolArgs)
 	case "whisper_audio_2_text":
 		result = s.handleWhisperAudio2Text(ctx, toolArgs)
 	case "get_video_stream":

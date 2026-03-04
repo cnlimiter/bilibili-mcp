@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,20 +14,93 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	defaultAPIBaseURL    = "https://api.bilibili.com"
+	defaultMemberBaseURL = "https://member.bilibili.com"
+)
+
+// ClientOption 客户端配置项
+type ClientOption func(*Client)
+
 // Client B站API客户端
 type Client struct {
-	httpClient *http.Client
-	cookies    map[string]string
+	httpClient      *http.Client
+	cookies         map[string]string
+	apiBaseURL      string
+	memberBaseURL   string
+	navURL          string
+	relationStatURL string
 }
 
 // NewClient 创建API客户端
 func NewClient(cookies map[string]string) *Client {
-	return &Client{
+	return NewClientWithOptions(cookies)
+}
+
+// NewClientWithOptions 创建支持可选配置的API客户端
+func NewClientWithOptions(cookies map[string]string, opts ...ClientOption) *Client {
+	client := &Client{
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second, // 增加到60秒，支持较慢的API请求
 		},
-		cookies: cookies,
+		cookies:       cookies,
+		apiBaseURL:    defaultAPIBaseURL,
+		memberBaseURL: defaultMemberBaseURL,
 	}
+
+	client.resetAPIEndpoints()
+
+	for _, opt := range opts {
+		if opt != nil {
+			opt(client)
+		}
+	}
+
+	return client
+}
+
+// NewClientWithEndpoints 创建可自定义端点的API客户端（主要用于测试）
+func NewClientWithEndpoints(cookies map[string]string, navURL, relationStatURL string) *Client {
+	client := NewClientWithOptions(cookies)
+
+	if strings.TrimSpace(navURL) != "" {
+		client.navURL = navURL
+	}
+
+	if strings.TrimSpace(relationStatURL) != "" {
+		client.relationStatURL = relationStatURL
+	}
+
+	return client
+}
+
+// WithAPIBaseURL 设置API基础地址（用于测试注入）
+func WithAPIBaseURL(baseURL string) ClientOption {
+	return func(c *Client) {
+		c.apiBaseURL = normalizeBaseURL(baseURL, defaultAPIBaseURL)
+		c.resetAPIEndpoints()
+	}
+}
+
+// WithMemberBaseURL 设置创作中心基础地址（用于测试注入）
+func WithMemberBaseURL(baseURL string) ClientOption {
+	return func(c *Client) {
+		c.memberBaseURL = normalizeBaseURL(baseURL, defaultMemberBaseURL)
+	}
+}
+
+func normalizeBaseURL(baseURL, fallback string) string {
+	normalized := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if normalized == "" {
+		return fallback
+	}
+
+	return normalized
+}
+
+func (c *Client) resetAPIEndpoints() {
+	c.navURL = c.apiBaseURL + "/x/web-interface/nav"
+	c.relationStatURL = c.apiBaseURL + "/x/relation/stat"
 }
 
 // getHeaders 获取标准请求头
@@ -39,6 +113,11 @@ func (c *Client) getHeaders(referer string) map[string]string {
 	}
 }
 
+// GetHeaders 获取标准请求头（供其他内部服务复用）
+func (c *Client) GetHeaders(referer string) map[string]string {
+	return c.getHeaders(referer)
+}
+
 // getCookieString 获取cookie字符串
 func (c *Client) getCookieString() string {
 	var parts []string
@@ -46,6 +125,21 @@ func (c *Client) getCookieString() string {
 		parts = append(parts, fmt.Sprintf("%s=%s", name, value))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// GetCookieString 获取cookie字符串（供其他内部服务复用）
+func (c *Client) GetCookieString() string {
+	return c.getCookieString()
+}
+
+// MemberBaseURL 获取创作中心基础地址
+func (c *Client) MemberBaseURL() string {
+	return c.memberBaseURL
+}
+
+// DoRequest 通过客户端执行HTTP请求
+func (c *Client) DoRequest(req *http.Request) (*http.Response, error) {
+	return c.httpClient.Do(req)
 }
 
 // makeRequest 发起HTTP请求
@@ -91,6 +185,53 @@ func (c *Client) makeRequest(method, url string, data url.Values, headers map[st
 	return body, nil
 }
 
+// MakeRequest 发起HTTP请求（供其他内部服务复用）
+func (c *Client) MakeRequest(method, requestURL string, data url.Values, headers map[string]string) ([]byte, error) {
+	return c.makeRequest(method, requestURL, data, headers)
+}
+
+// makeJSONRequest 发起JSON HTTP请求
+func (c *Client) makeJSONRequest(method, requestURL string, jsonBody any, headers map[string]string) ([]byte, error) {
+	var requestBody io.Reader
+	if jsonBody != nil {
+		payload, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, errors.Wrap(err, "序列化JSON请求失败")
+		}
+		requestBody = bytes.NewReader(payload)
+	}
+
+	req, err := http.NewRequest(method, requestURL, requestBody)
+	if err != nil {
+		return nil, errors.Wrap(err, "创建JSON请求失败")
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", c.getCookieString())
+
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "HTTP请求失败")
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "读取响应失败")
+	}
+
+	return body, nil
+}
+
+// MakeJSONRequest 发起JSON HTTP请求（供其他内部服务复用）
+func (c *Client) MakeJSONRequest(method, requestURL string, jsonBody any, headers map[string]string) ([]byte, error) {
+	return c.makeJSONRequest(method, requestURL, jsonBody, headers)
+}
+
 // NavResponse 导航API响应
 type NavResponse struct {
 	Code    int    `json:"code"`
@@ -103,10 +244,39 @@ type NavResponse struct {
 	} `json:"data"`
 }
 
+// RelationStatResponse 关注/粉丝统计API响应
+type RelationStatResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
+		Mid       int64 `json:"mid"`
+		Following int64 `json:"following"`
+		Follower  int64 `json:"follower"`
+	} `json:"data"`
+}
+
+// ArticleDraftResponse 专栏草稿创建API响应
+type ArticleDraftResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
+		DraftID int64 `json:"draft_id"`
+	} `json:"data"`
+}
+
+// ArticlePublishResponse 专栏发布API响应
+type ArticlePublishResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
+		ArticleID int64 `json:"article_id"`
+	} `json:"data"`
+}
+
 // GetNavInfo 获取导航信息（用于验证登录状态和获取用户信息）
 func (c *Client) GetNavInfo() (*NavResponse, error) {
 	headers := c.getHeaders("https://www.bilibili.com")
-	body, err := c.makeRequest("GET", "https://api.bilibili.com/x/web-interface/nav", nil, headers)
+	body, err := c.makeRequest("GET", c.navURL, nil, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +284,77 @@ func (c *Client) GetNavInfo() (*NavResponse, error) {
 	var resp NavResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, errors.Wrap(err, "解析导航API响应失败")
+	}
+
+	return &resp, nil
+}
+
+// GetRelationStat 获取用户关注/粉丝统计
+func (c *Client) GetRelationStat(mid int64) (*RelationStatResponse, error) {
+	headers := c.getHeaders("https://space.bilibili.com/")
+	query := url.Values{
+		"vmid": {strconv.FormatInt(mid, 10)},
+	}
+
+	body, err := c.makeRequest("GET", c.relationStatURL, query, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp RelationStatResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, errors.Wrap(err, "解析关系统计API响应失败")
+	}
+
+	return &resp, nil
+}
+
+// CreateArticleDraft 创建专栏草稿
+func (c *Client) CreateArticleDraft(title, contentHTML string, categoryID int, bannerURL string) (*ArticleDraftResponse, error) {
+	headers := c.getHeaders("https://member.bilibili.com/platform/upload/text/edit")
+	requestURL := c.apiBaseURL + "/x/article/creative/draft/add"
+
+	payload := map[string]any{
+		"title":   title,
+		"content": contentHTML,
+	}
+	if categoryID > 0 {
+		payload["category"] = categoryID
+	}
+	if strings.TrimSpace(bannerURL) != "" {
+		payload["banner"] = bannerURL
+	}
+
+	body, err := c.makeJSONRequest(http.MethodPost, requestURL, payload, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp ArticleDraftResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, errors.Wrap(err, "解析专栏草稿创建API响应失败")
+	}
+
+	return &resp, nil
+}
+
+// PublishArticleDraft 发布专栏草稿
+func (c *Client) PublishArticleDraft(draftID int64) (*ArticlePublishResponse, error) {
+	headers := c.getHeaders("https://member.bilibili.com/platform/upload/text/edit")
+	requestURL := c.apiBaseURL + "/x/article/creative/publish"
+
+	payload := map[string]any{
+		"draft_id": draftID,
+	}
+
+	body, err := c.makeJSONRequest(http.MethodPost, requestURL, payload, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp ArticlePublishResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, errors.Wrap(err, "解析专栏发布API响应失败")
 	}
 
 	return &resp, nil

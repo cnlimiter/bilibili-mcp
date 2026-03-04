@@ -280,6 +280,217 @@ func GetMCPTools() []MCPTool {
 			},
 		},
 
+		// 统计与视频上传相关
+		{
+			Name:        "get_user_stats",
+			Description: "获取关注/粉丝数",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"user_id": map[string]interface{}{
+						"type":        "integer",
+						"description": "用户UID（可选，不传则获取当前登录账号）",
+					},
+					"account_name": map[string]interface{}{
+						"type":        "string",
+						"description": "指定使用的账号名称（可选）",
+					},
+				},
+			},
+		},
+		{
+			Name:        "upload_video_draft",
+			Description: "视频上传（返回draft_token，不上架）",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"video_path": map[string]interface{}{
+						"type":        "string",
+						"description": "本地视频文件路径",
+					},
+					"tid": map[string]interface{}{
+						"type":        "integer",
+						"description": "视频分区ID",
+					},
+					"title": map[string]interface{}{
+						"type":        "string",
+						"description": "视频标题",
+					},
+					"account_name": map[string]interface{}{
+						"type":        "string",
+						"description": "指定使用的账号名称（可选）",
+					},
+				},
+				"required": []string{"video_path", "tid", "title"},
+			},
+		},
+		{
+			Name:        "publish_video",
+			Description: "发布视频草稿",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"draft_token": map[string]interface{}{
+						"type":        "string",
+						"description": "视频草稿token",
+					},
+					"copyright": map[string]interface{}{
+						"type":        "integer",
+						"description": "版权标识（1=自制，2=转载）",
+					},
+					"tid": map[string]interface{}{
+						"type":        "integer",
+						"description": "视频分区ID",
+					},
+					"title": map[string]interface{}{
+						"type":        "string",
+						"description": "视频标题",
+					},
+					"tag": map[string]interface{}{
+						"type":        "string",
+						"description": "视频标签，多个标签使用英文逗号分隔",
+					},
+					"desc": map[string]interface{}{
+						"type":        "string",
+						"description": "视频简介（可选）",
+					},
+					"account_name": map[string]interface{}{
+						"type":        "string",
+						"description": "指定使用的账号名称（可选）",
+					},
+				},
+				"required": []string{"draft_token", "copyright", "tid", "title", "tag"},
+			},
+		},
+		{
+			Name:        "upload_video",
+			Description: "一键上传视频（上传+发布）",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"video_path": map[string]interface{}{
+						"type":        "string",
+						"description": "本地视频文件路径",
+					},
+					"copyright": map[string]interface{}{
+						"type":        "integer",
+						"description": "版权标识（1=自制，2=转载）",
+					},
+					"tid": map[string]interface{}{
+						"type":        "integer",
+						"description": "视频分区ID",
+					},
+					"title": map[string]interface{}{
+						"type":        "string",
+						"description": "视频标题",
+					},
+					"tag": map[string]interface{}{
+						"type":        "string",
+						"description": "视频标签，多个标签使用英文逗号分隔",
+					},
+					"desc": map[string]interface{}{
+						"type":        "string",
+						"description": "视频简介（可选）",
+					},
+					"account_name": map[string]interface{}{
+						"type":        "string",
+						"description": "指定使用的账号名称（可选）",
+					},
+				},
+				"required": []string{"video_path", "copyright", "tid", "title", "tag"},
+			},
+		},
+		{
+			Name:        "check_video_upload_status",
+			Description: "查询上传任务状态（预留）",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"draft_token": map[string]interface{}{
+						"type":        "string",
+						"description": "视频草稿token",
+					},
+					"account_name": map[string]interface{}{
+						"type":        "string",
+						"description": "指定使用的账号名称（可选）",
+					},
+				},
+				"required": []string{"draft_token"},
+			},
+		},
+
+		// 专栏相关
+		{
+			Name:        "upload_column_draft",
+			Description: "创建专栏草稿",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{
+						"type":        "string",
+						"description": "专栏标题",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "专栏内容（Markdown格式）",
+					},
+					"category_id": map[string]interface{}{
+						"type":        "integer",
+						"description": "专栏分类ID（可选）",
+					},
+					"account_name": map[string]interface{}{
+						"type":        "string",
+						"description": "指定使用的账号名称（可选）",
+					},
+				},
+				"required": []string{"title", "content"},
+			},
+		},
+		{
+			Name:        "publish_column",
+			Description: "发布专栏草稿",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"draft_id": map[string]interface{}{
+						"type":        "integer",
+						"description": "专栏草稿ID",
+					},
+					"account_name": map[string]interface{}{
+						"type":        "string",
+						"description": "指定使用的账号名称（可选）",
+					},
+				},
+				"required": []string{"draft_id"},
+			},
+		},
+		{
+			Name:        "upload_column",
+			Description: "一键上传专栏（创建草稿并发布）",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"title": map[string]interface{}{
+						"type":        "string",
+						"description": "专栏标题",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "专栏内容（Markdown格式）",
+					},
+					"category_id": map[string]interface{}{
+						"type":        "integer",
+						"description": "专栏分类ID（可选）",
+					},
+					"account_name": map[string]interface{}{
+						"type":        "string",
+						"description": "指定使用的账号名称（可选）",
+					},
+				},
+				"required": []string{"title", "content"},
+			},
+		},
+
 		// 可选功能 - Whisper音频转录
 		{
 			Name:        "whisper_audio_2_text",

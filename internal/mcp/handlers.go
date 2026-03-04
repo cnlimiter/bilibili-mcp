@@ -12,8 +12,11 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/shirenchuang/bilibili-mcp/internal/bilibili/api"
+	"github.com/shirenchuang/bilibili-mcp/internal/bilibili/article"
 	"github.com/shirenchuang/bilibili-mcp/internal/bilibili/comment"
 	"github.com/shirenchuang/bilibili-mcp/internal/bilibili/download"
+	"github.com/shirenchuang/bilibili-mcp/internal/bilibili/upload"
+	"github.com/shirenchuang/bilibili-mcp/internal/bilibili/userstats"
 	"github.com/shirenchuang/bilibili-mcp/pkg/logger"
 )
 
@@ -857,6 +860,592 @@ func (s *Server) handleFollowUser(ctx context.Context, args map[string]interface
 	}
 
 	return s.createToolResult(fmt.Sprintf("关注成功 - 用户: %s", userID), false)
+}
+
+// 统计与视频上传相关处理器
+
+// handleGetUserStats 获取关注/粉丝统计
+func (s *Server) handleGetUserStats(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	accountName := s.getAccountName(args)
+
+	page, cleanup, err := s.browserPool.GetWithAuth(accountName)
+	if err != nil {
+		return s.createErrorResult(err)
+	}
+	defer cleanup()
+
+	cookies, err := page.Context().Cookies()
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "获取cookies失败"))
+	}
+
+	cookieMap := make(map[string]string)
+	for _, cookie := range cookies {
+		cookieMap[cookie.Name] = cookie.Value
+	}
+
+	apiClient := api.NewClient(cookieMap)
+	statsService := userstats.NewService(apiClient)
+
+	var targetUserID *int64
+	if rawUserID, exists := args["user_id"]; exists {
+		parsedUserID, parseErr := parseInt64Arg(rawUserID, "user_id")
+		if parseErr != nil {
+			return s.createToolResult(parseErr.Error(), true)
+		}
+		if parsedUserID <= 0 {
+			return s.createToolResult("user_id参数必须大于0", true)
+		}
+		targetUserID = &parsedUserID
+	}
+
+	stats, err := statsService.GetRelationStat(ctx, targetUserID)
+	if err != nil {
+		return s.createErrorResult(err)
+	}
+
+	resultJSON, err := json.Marshal(map[string]interface{}{
+		"user_id":         stats.Mid,
+		"following_count": stats.Following,
+		"follower_count":  stats.Follower,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "序列化结果失败"))
+	}
+
+	return s.createToolResult(string(resultJSON), false)
+}
+
+// handleUploadVideoDraft 上传视频并创建草稿
+func (s *Server) handleUploadVideoDraft(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	videoPath, ok := args["video_path"].(string)
+	if !ok || strings.TrimSpace(videoPath) == "" {
+		return s.createToolResult("缺少video_path参数", true)
+	}
+
+	rawTid, exists := args["tid"]
+	if !exists {
+		return s.createToolResult("缺少tid参数", true)
+	}
+	tid, err := parseIntArg(rawTid, "tid")
+	if err != nil {
+		return s.createToolResult(err.Error(), true)
+	}
+	if tid <= 0 {
+		return s.createToolResult("tid参数必须大于0", true)
+	}
+
+	title, ok := args["title"].(string)
+	if !ok || strings.TrimSpace(title) == "" {
+		return s.createToolResult("缺少title参数", true)
+	}
+
+	accountName := s.getAccountName(args)
+
+	page, cleanup, err := s.browserPool.GetWithAuth(accountName)
+	if err != nil {
+		return s.createErrorResult(err)
+	}
+	defer cleanup()
+
+	cookies, err := page.Context().Cookies()
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "获取cookies失败"))
+	}
+
+	cookieMap := make(map[string]string)
+	for _, cookie := range cookies {
+		cookieMap[cookie.Name] = cookie.Value
+	}
+
+	apiClient := api.NewClient(cookieMap)
+	uploadService := upload.NewService(apiClient)
+
+	draftInfo, err := uploadService.CreateVideoDraft(ctx, strings.TrimSpace(videoPath), tid, strings.TrimSpace(title))
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "创建视频草稿失败"))
+	}
+
+	resultJSON, err := json.Marshal(map[string]interface{}{
+		"draft_token": draftInfo.DraftToken,
+		"cid":         draftInfo.CID,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "序列化结果失败"))
+	}
+
+	return s.createToolResult(string(resultJSON), false)
+}
+
+// handlePublishVideo 发布视频草稿
+func (s *Server) handlePublishVideo(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	draftToken, ok := args["draft_token"].(string)
+	if !ok || strings.TrimSpace(draftToken) == "" {
+		return s.createToolResult("缺少draft_token参数", true)
+	}
+
+	rawCopyright, exists := args["copyright"]
+	if !exists {
+		return s.createToolResult("缺少copyright参数", true)
+	}
+	copyright, err := parseIntArg(rawCopyright, "copyright")
+	if err != nil {
+		return s.createToolResult(err.Error(), true)
+	}
+	if copyright <= 0 {
+		return s.createToolResult("copyright参数必须大于0", true)
+	}
+
+	rawTid, exists := args["tid"]
+	if !exists {
+		return s.createToolResult("缺少tid参数", true)
+	}
+	tid, err := parseIntArg(rawTid, "tid")
+	if err != nil {
+		return s.createToolResult(err.Error(), true)
+	}
+	if tid <= 0 {
+		return s.createToolResult("tid参数必须大于0", true)
+	}
+
+	title, ok := args["title"].(string)
+	if !ok || strings.TrimSpace(title) == "" {
+		return s.createToolResult("缺少title参数", true)
+	}
+
+	tag, ok := args["tag"].(string)
+	if !ok || strings.TrimSpace(tag) == "" {
+		return s.createToolResult("缺少tag参数", true)
+	}
+
+	desc := ""
+	if rawDesc, exists := args["desc"]; exists {
+		if typedDesc, typeOK := rawDesc.(string); !typeOK {
+			return s.createToolResult("desc参数类型错误，应为字符串", true)
+		} else {
+			desc = strings.TrimSpace(typedDesc)
+		}
+	}
+
+	if copyright == 2 {
+		return s.createToolResult("当前工具未提供source参数，暂不支持copyright=2（转载）", true)
+	}
+
+	accountName := s.getAccountName(args)
+
+	page, cleanup, err := s.browserPool.GetWithAuth(accountName)
+	if err != nil {
+		return s.createErrorResult(err)
+	}
+	defer cleanup()
+
+	cookies, err := page.Context().Cookies()
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "获取cookies失败"))
+	}
+
+	cookieMap := make(map[string]string)
+	for _, cookie := range cookies {
+		cookieMap[cookie.Name] = cookie.Value
+	}
+
+	apiClient := api.NewClient(cookieMap)
+	uploadService := upload.NewService(apiClient)
+
+	bvid, err := uploadService.PublishVideo(ctx, strings.TrimSpace(draftToken), upload.VideoPublishInfo{
+		Copyright: copyright,
+		Tid:       tid,
+		Title:     strings.TrimSpace(title),
+		Tag:       strings.TrimSpace(tag),
+		Desc:      desc,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "发布视频失败"))
+	}
+
+	videoURL := fmt.Sprintf("https://www.bilibili.com/video/%s", bvid)
+	resultJSON, err := json.Marshal(map[string]interface{}{
+		"bvid":      bvid,
+		"video_url": videoURL,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "序列化结果失败"))
+	}
+
+	return s.createToolResult(string(resultJSON), false)
+}
+
+// handleUploadVideo 一键上传视频（上传+发布）
+func (s *Server) handleUploadVideo(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	videoPath, ok := args["video_path"].(string)
+	if !ok || strings.TrimSpace(videoPath) == "" {
+		return s.createToolResult("缺少video_path参数", true)
+	}
+
+	rawCopyright, exists := args["copyright"]
+	if !exists {
+		return s.createToolResult("缺少copyright参数", true)
+	}
+	copyright, err := parseIntArg(rawCopyright, "copyright")
+	if err != nil {
+		return s.createToolResult(err.Error(), true)
+	}
+	if copyright <= 0 {
+		return s.createToolResult("copyright参数必须大于0", true)
+	}
+
+	rawTid, exists := args["tid"]
+	if !exists {
+		return s.createToolResult("缺少tid参数", true)
+	}
+	tid, err := parseIntArg(rawTid, "tid")
+	if err != nil {
+		return s.createToolResult(err.Error(), true)
+	}
+	if tid <= 0 {
+		return s.createToolResult("tid参数必须大于0", true)
+	}
+
+	title, ok := args["title"].(string)
+	if !ok || strings.TrimSpace(title) == "" {
+		return s.createToolResult("缺少title参数", true)
+	}
+
+	tag, ok := args["tag"].(string)
+	if !ok || strings.TrimSpace(tag) == "" {
+		return s.createToolResult("缺少tag参数", true)
+	}
+
+	desc := ""
+	if rawDesc, exists := args["desc"]; exists {
+		if typedDesc, typeOK := rawDesc.(string); !typeOK {
+			return s.createToolResult("desc参数类型错误，应为字符串", true)
+		} else {
+			desc = strings.TrimSpace(typedDesc)
+		}
+	}
+
+	if copyright == 2 {
+		return s.createToolResult("当前工具未提供source参数，暂不支持copyright=2（转载）", true)
+	}
+
+	accountName := s.getAccountName(args)
+
+	page, cleanup, err := s.browserPool.GetWithAuth(accountName)
+	if err != nil {
+		return s.createErrorResult(err)
+	}
+	defer cleanup()
+
+	cookies, err := page.Context().Cookies()
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "获取cookies失败"))
+	}
+
+	cookieMap := make(map[string]string)
+	for _, cookie := range cookies {
+		cookieMap[cookie.Name] = cookie.Value
+	}
+
+	apiClient := api.NewClient(cookieMap)
+	uploadService := upload.NewService(apiClient)
+
+	draftInfo, err := uploadService.CreateVideoDraft(ctx, strings.TrimSpace(videoPath), tid, strings.TrimSpace(title))
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "创建视频草稿失败"))
+	}
+
+	bvid, err := uploadService.PublishVideo(ctx, draftInfo.DraftToken, upload.VideoPublishInfo{
+		Copyright: copyright,
+		Tid:       tid,
+		Title:     strings.TrimSpace(title),
+		Tag:       strings.TrimSpace(tag),
+		Desc:      desc,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "发布视频失败"))
+	}
+
+	videoURL := fmt.Sprintf("https://www.bilibili.com/video/%s", bvid)
+	resultJSON, err := json.Marshal(map[string]interface{}{
+		"bvid":      bvid,
+		"video_url": videoURL,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "序列化结果失败"))
+	}
+
+	return s.createToolResult(string(resultJSON), false)
+}
+
+// handleCheckVideoUploadStatus 查询上传状态（预留）
+func (s *Server) handleCheckVideoUploadStatus(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	_ = ctx
+
+	draftToken, ok := args["draft_token"].(string)
+	if !ok || strings.TrimSpace(draftToken) == "" {
+		return s.createToolResult("缺少draft_token参数", true)
+	}
+
+	resultJSON, err := json.Marshal(map[string]interface{}{
+		"status":  "pending",
+		"message": "not implemented",
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "序列化结果失败"))
+	}
+
+	return s.createToolResult(string(resultJSON), false)
+}
+
+func parseIntArg(rawValue interface{}, fieldName string) (int, error) {
+	switch value := rawValue.(type) {
+	case float64:
+		return int(value), nil
+	case int:
+		return value, nil
+	case int64:
+		return int(value), nil
+	case json.Number:
+		parsed, err := value.Int64()
+		if err != nil {
+			return 0, errors.Errorf("%s参数格式错误", fieldName)
+		}
+		return int(parsed), nil
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil {
+			return 0, errors.Errorf("%s参数格式错误", fieldName)
+		}
+		return int(parsed), nil
+	default:
+		return 0, errors.Errorf("%s参数类型错误，应为整数", fieldName)
+	}
+}
+
+func parseInt64Arg(rawValue interface{}, fieldName string) (int64, error) {
+	switch value := rawValue.(type) {
+	case float64:
+		return int64(value), nil
+	case int:
+		return int64(value), nil
+	case int64:
+		return value, nil
+	case json.Number:
+		parsed, err := value.Int64()
+		if err != nil {
+			return 0, errors.Errorf("%s参数格式错误", fieldName)
+		}
+		return parsed, nil
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil {
+			return 0, errors.Errorf("%s参数格式错误", fieldName)
+		}
+		return parsed, nil
+	default:
+		return 0, errors.Errorf("%s参数类型错误，应为整数", fieldName)
+	}
+}
+
+// 专栏相关处理器
+
+// handleUploadColumnDraft 创建专栏草稿
+func (s *Server) handleUploadColumnDraft(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	title, ok := args["title"].(string)
+	if !ok || title == "" {
+		return s.createToolResult("缺少title参数", true)
+	}
+
+	content, ok := args["content"].(string)
+	if !ok || content == "" {
+		return s.createToolResult("缺少content参数", true)
+	}
+
+	categoryID := 0
+	if rawCategoryID, exists := args["category_id"]; exists {
+		switch value := rawCategoryID.(type) {
+		case float64:
+			categoryID = int(value)
+		case int:
+			categoryID = value
+		case int64:
+			categoryID = int(value)
+		default:
+			return s.createToolResult("category_id参数类型错误，应为整数", true)
+		}
+	}
+
+	accountName := s.getAccountName(args)
+
+	page, cleanup, err := s.browserPool.GetWithAuth(accountName)
+	if err != nil {
+		return s.createErrorResult(err)
+	}
+	defer cleanup()
+
+	cookies, err := page.Context().Cookies()
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "获取cookies失败"))
+	}
+
+	cookieMap := make(map[string]string)
+	for _, cookie := range cookies {
+		cookieMap[cookie.Name] = cookie.Value
+	}
+
+	apiClient := api.NewClient(cookieMap)
+	articleService := article.NewService(apiClient)
+
+	draftID, err := articleService.CreateDraft(title, content, categoryID)
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "创建专栏草稿失败"))
+	}
+
+	resultJSON, err := json.Marshal(map[string]interface{}{
+		"draft_id": draftID,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "序列化结果失败"))
+	}
+
+	return s.createToolResult(string(resultJSON), false)
+}
+
+// handlePublishColumn 发布专栏草稿
+func (s *Server) handlePublishColumn(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	rawDraftID, exists := args["draft_id"]
+	if !exists {
+		return s.createToolResult("缺少draft_id参数", true)
+	}
+
+	var draftID int64
+	switch value := rawDraftID.(type) {
+	case float64:
+		draftID = int64(value)
+	case int:
+		draftID = int64(value)
+	case int64:
+		draftID = value
+	case string:
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return s.createToolResult("draft_id参数格式错误", true)
+		}
+		draftID = parsed
+	default:
+		return s.createToolResult("draft_id参数类型错误，应为整数", true)
+	}
+
+	if draftID <= 0 {
+		return s.createToolResult("draft_id参数必须大于0", true)
+	}
+
+	accountName := s.getAccountName(args)
+
+	page, cleanup, err := s.browserPool.GetWithAuth(accountName)
+	if err != nil {
+		return s.createErrorResult(err)
+	}
+	defer cleanup()
+
+	cookies, err := page.Context().Cookies()
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "获取cookies失败"))
+	}
+
+	cookieMap := make(map[string]string)
+	for _, cookie := range cookies {
+		cookieMap[cookie.Name] = cookie.Value
+	}
+
+	apiClient := api.NewClient(cookieMap)
+	articleService := article.NewService(apiClient)
+
+	articleID, err := articleService.PublishDraft(draftID)
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "发布专栏草稿失败"))
+	}
+
+	articleURL := fmt.Sprintf("https://www.bilibili.com/read/cv%d", articleID)
+	resultJSON, err := json.Marshal(map[string]interface{}{
+		"article_id":  articleID,
+		"article_url": articleURL,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "序列化结果失败"))
+	}
+
+	return s.createToolResult(string(resultJSON), false)
+}
+
+// handleUploadColumn 一键上传专栏（创建草稿并发布）
+func (s *Server) handleUploadColumn(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	title, ok := args["title"].(string)
+	if !ok || title == "" {
+		return s.createToolResult("缺少title参数", true)
+	}
+
+	content, ok := args["content"].(string)
+	if !ok || content == "" {
+		return s.createToolResult("缺少content参数", true)
+	}
+
+	categoryID := 0
+	if rawCategoryID, exists := args["category_id"]; exists {
+		switch value := rawCategoryID.(type) {
+		case float64:
+			categoryID = int(value)
+		case int:
+			categoryID = value
+		case int64:
+			categoryID = int(value)
+		default:
+			return s.createToolResult("category_id参数类型错误，应为整数", true)
+		}
+	}
+
+	accountName := s.getAccountName(args)
+
+	page, cleanup, err := s.browserPool.GetWithAuth(accountName)
+	if err != nil {
+		return s.createErrorResult(err)
+	}
+	defer cleanup()
+
+	cookies, err := page.Context().Cookies()
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "获取cookies失败"))
+	}
+
+	cookieMap := make(map[string]string)
+	for _, cookie := range cookies {
+		cookieMap[cookie.Name] = cookie.Value
+	}
+
+	apiClient := api.NewClient(cookieMap)
+	articleService := article.NewService(apiClient)
+
+	draftID, err := articleService.CreateDraft(title, content, categoryID)
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "创建专栏草稿失败"))
+	}
+
+	articleID, err := articleService.PublishDraft(draftID)
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "发布专栏草稿失败"))
+	}
+
+	articleURL := fmt.Sprintf("https://www.bilibili.com/read/cv%d", articleID)
+	resultJSON, err := json.Marshal(map[string]interface{}{
+		"article_id":  articleID,
+		"article_url": articleURL,
+	})
+	if err != nil {
+		return s.createErrorResult(errors.Wrap(err, "序列化结果失败"))
+	}
+
+	return s.createToolResult(string(resultJSON), false)
 }
 
 // 可选功能处理器

@@ -7,6 +7,7 @@ require (
 	github.com/playwright-community/playwright-go v0.5700.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.17.0
+	github.com/yuin/goldmark v1.7.13
 )
 
 require (

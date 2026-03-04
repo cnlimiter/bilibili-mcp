@@ -96,3 +96,6 @@ models/
 *.ggml
 
 # 移除嵌入模型相关忽略规则
+/.spec-workflow/
+/.sisyphus/
+/.serena/

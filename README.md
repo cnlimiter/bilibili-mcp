@@ -153,6 +153,14 @@ claude mcp add --transport http bilibili-mcp http://localhost:18666/mcp
 | `download_media` | 智能下载B站视频/音频 | ✅ |
 | `get_video_stream` | 获取视频播放地址 | ✅ |
 | `whisper_audio_2_text` | 音频转录为文字（需初始化） | ✅ |
+| `get_user_stats` | 获取用户关注/粉丝数统计 | ✅ |
+| `upload_column_draft` | 创建专栏草稿（Markdown输入） | ✅ |
+| `publish_column` | 发布专栏草稿 | ✅ |
+| `upload_column` | 一键上传专栏（创建+发布） | ✅ |
+| `upload_video_draft` | 上传视频文件到草稿（不上架） | ✅ |
+| `publish_video` | 发布视频草稿 | ✅ |
+| `upload_video` | 一键上传视频（上传+发布） | ✅ |
+| `check_video_upload_status` | 查询视频上传任务状态 | ✅ |
 
 ## 💡 使用示例
 
