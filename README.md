@@ -59,6 +59,43 @@ cd bilibili-mcp
 make build
 ```
 
+#### 方式三：Docker 部署（推荐服务器使用）
+
+本项目已提供 `Dockerfile` + `docker-compose.yml`，可一键启动 MCP 服务。
+
+**前置条件**：安装 Docker / Docker Compose（Windows 建议 Docker Desktop）。
+
+1) 启动服务
+
+```bash
+docker compose up -d --build
+```
+
+2) 验证服务
+
+```bash
+curl -fsS -X POST http://localhost:18666/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"ping","id":1}'
+```
+
+3) 登录说明（重要）
+
+登录工具 `bilibili-login` 需要交互式浏览器（非 headless），不建议在容器里跑。
+
+- 推荐做法：在宿主机运行 `./bilibili-login` 完成登录后，生成的 `./cookies/` 会通过 `docker-compose.yml` 挂载进容器，服务端即可直接使用。
+
+4) 数据目录（已在 compose 挂载）
+
+- `./cookies`：登录态与账号信息
+- `./logs`：服务日志
+- `./models`：Whisper 模型（如启用转录）
+- `./downloads`：媒体下载输出目录
+
+5) Docker 配置文件
+
+默认使用 `config.docker.yaml`（已在 compose 中挂载到容器内 `/app/config.yaml`），其中 `server.host` 已设置为 `0.0.0.0` 以便对外提供服务。
+
 ### 2. 登录B站账号
 
 ```bash
