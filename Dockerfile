@@ -1,7 +1,7 @@
-FROM mcr.microsoft.com/playwright:v1.47.0-noble AS pwbase
+FROM mcr.microsoft.com/playwright:v1.57.0-jammy AS pwbase
 
 
-FROM mcr.microsoft.com/oss/go/microsoft/golang:1.21 AS builder
+FROM mcr.microsoft.com/oss/go/microsoft/golang:1.22 AS builder
 
 WORKDIR /src
 
@@ -13,7 +13,7 @@ COPY . .
 # 安装 playwright-go 所需 driver（浏览器直接复用 Playwright 官方镜像中的 /ms-playwright）
 COPY --from=pwbase /ms-playwright /ms-playwright
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN go run github.com/playwright-community/playwright-go/cmd/playwright@v0.4700.0 install chromium
+RUN go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install chromium
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/bilibili-mcp ./cmd/server
 
